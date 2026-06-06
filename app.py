@@ -1,230 +1,241 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 
-# Set page configuration
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="AgriGrow: Smart Agricultural Advisory Dashboard",
+    page_title="AgriEconomics: Crop Dashboard",
     page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# -----------------------------------------------------------------------------
-# 1. MOCK DATABASE SETUP
-# -----------------------------------------------------------------------------
-# Standardized crop data per acre
-CROP_DB = {
-    "Wheat": {
-        "seeds_per_acre_kg": 50,
-        "growth_days": 120,
-        "pesticides": "Deltamethrin (0.5L/acre)",
-        "herbicides": "Glyphosate (1.0L/acre)",
-        "yield_per_acre_kg": 1600,
-        "local_rate_per_kg": 100,       # e.g., PKR or local currency unit
-        "intl_rate_per_kg": 140,
-        "base_cost_per_acre": 45000     # Labor, water, tractor, fertilizer
+# --- CUSTOM THEMING / STYLE INJECTION ---
+st.markdown("""
+    <style>
+    .main { background-color: #f9fbf9; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    h1, h2, h3 { color: #2e5a1c; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- MOCK DATASTORE ---
+# Rates and inputs optimized for Punjab/Pakistan regional averages and global markets.
+# Values are normalized per ACRE. (1 Hectare = 2.47105 Acres)
+CROP_DATA = {
+    "Wheat (Gandum)": {
+        "seed_req_kg_per_acre": 50,
+        "seed_cost_per_kg": 120,
+        "fertilizer_desc": "Urea: 2 bags/acre, DAP: 1 bag/acre",
+        "pesticide_desc": "Sulfosulfuron for weed control, Rust prevention fungicides if humid.",
+        "input_chemical_cost_per_acre": 18000,
+        "labor_overhead_per_acre": 12000,
+        "days_to_harvest": 140,
+        "yield_tons_per_acre": 1.6,
+        "local_rate_pkr_per_ton": 100000,       # ~4000 PKR per 40kg
+        "export_rate_pkr_per_ton": 135000       # Global equivalent in PKR
     },
-    "Rice": {
-        "seeds_per_acre_kg": 8,
-        "growth_days": 105,
-        "pesticides": "Cartap Hydrochloride (1.2L/acre)",
-        "herbicides": "Butachlor (0.8L/acre)",
-        "yield_per_acre_kg": 2400,
-        "local_rate_per_kg": 120,
-        "intl_rate_per_kg": 180,
-        "base_cost_per_acre": 65000
+    "Rice (Basmati)": {
+        "seed_req_kg_per_acre": 6,
+        "seed_cost_per_kg": 450,
+        "fertilizer_desc": "DAP: 1 bag/acre, Urea: 2 bags/acre, Zinc Sulfate: 10kg/acre",
+        "pesticide_desc": "Pre-emergence herbicides (Butachlor), Cartap for stem borer control.",
+        "input_chemical_cost_per_acre": 25000,
+        "labor_overhead_per_acre": 20000,
+        "days_to_harvest": 120,
+        "yield_tons_per_acre": 1.8,
+        "local_rate_pkr_per_ton": 225000,      # High value Basmati variety
+        "export_rate_pkr_per_ton": 320000
     },
-    "Corn (Maize)": {
-        "seeds_per_acre_kg": 10,
-        "growth_days": 115,
-        "pesticides": "Lambda-Cyhalothrin (0.4L/acre)",
-        "herbicides": "Atrazine (1.5L/acre)",
-        "yield_per_acre_kg": 3200,
-        "local_rate_per_kg": 85,
-        "intl_rate_per_kg": 110,
-        "base_cost_per_acre": 55000
+    "Cotton (Kapas)": {
+        "seed_req_kg_per_acre": 8,
+        "seed_cost_per_kg": 800,
+        "fertilizer_desc": "DAP: 1.5 bags/acre, Urea: 3 bags/acre (split applications)",
+        "pesticide_desc": "Targeted sprays for Whitefly, Pink Bollworm, and Jassids.",
+        "input_chemical_cost_per_acre": 32000,
+        "labor_overhead_per_acre": 22000,
+        "days_to_harvest": 180,
+        "yield_tons_per_acre": 1.0,
+        "local_rate_pkr_per_ton": 210000,      # ~8400 PKR per 40kg
+        "export_rate_pkr_per_ton": 260000
     },
-    "Cotton": {
-        "seeds_per_acre_kg": 6,
-        "growth_days": 180,
-        "pesticides": "Imidacloprid (0.6L/acre)",
-        "herbicides": "Pendimethalin (1.2L/acre)",
-        "yield_per_acre_kg": 1000,
-        "local_rate_per_kg": 220,
-        "intl_rate_per_kg": 280,
-        "base_cost_per_acre": 70000
+    "Sugarcane (Kamad)": {
+        "seed_req_kg_per_acre": 3000, # Uses seed sets/canes
+        "seed_cost_per_kg": 12,
+        "fertilizer_desc": "DAP: 2 bags/acre, Urea: 4-5 bags/acre, Potash: 1 bag/acre",
+        "pesticide_desc": "Granular insecticides for Borers, Termite control chemical treatment.",
+        "input_chemical_cost_per_acre": 40000,
+        "labor_overhead_per_acre": 35000,
+        "days_to_harvest": 300,
+        "yield_tons_per_acre": 32.0,
+        "local_rate_pkr_per_ton": 10000,        # ~400 PKR per 40kg
+        "export_rate_pkr_per_ton": 13000
+    },
+    "Maize (Makai)": {
+        "seed_req_kg_per_acre": 10,
+        "seed_cost_per_kg": 1200, # Hybrid seeds
+        "fertilizer_desc": "DAP: 2 bags/acre, Urea: 3 bags/acre, Zinc application",
+        "pesticide_desc": "Fall Armyworm monitoring and emamectin benzoate application.",
+        "input_chemical_cost_per_acre": 28000,
+        "labor_overhead_per_acre": 15000,
+        "days_to_harvest": 110,
+        "yield_tons_per_acre": 3.5,
+        "local_rate_pkr_per_ton": 70000,
+        "export_rate_pkr_per_ton": 85000
+    },
+    "Potato (Aloo)": {
+        "seed_req_kg_per_acre": 1200,
+        "seed_cost_per_kg": 60,
+        "fertilizer_desc": "DAP: 3 bags/acre, Urea: 2 bags/acre, SOP (Potash): 2 bags/acre",
+        "pesticide_desc": "Fungicides for Early/Late Blight (Mancozeb), Aphid controls.",
+        "input_chemical_cost_per_acre": 45000,
+        "labor_overhead_per_acre": 25000,
+        "days_to_harvest": 100,
+        "yield_tons_per_acre": 11.0,
+        "local_rate_pkr_per_ton": 45000,
+        "export_rate_pkr_per_ton": 65000
     }
 }
 
-# -----------------------------------------------------------------------------
-# MAIN APP INTERFACE
-# -----------------------------------------------------------------------------
-st.title("🌾 AgriGrow Dashboard")
-st.subheader("Interactive Agricultural Advisory & Financial Projection System")
-st.markdown("---")
+# --- HEADER SECTION ---
+st.title("🌾 AgriEconomics: Interactive Crop & Decision Dashboard")
+st.markdown("""
+    Welcome to the smart farming economic evaluation tool. This dashboard calculates resource requirements, 
+    estimated yields, timelines, and accurate financial projections (Profit/Loss analyses) 
+    comparing local and export market channels.
+    
+    *Adjust variables in the sidebar to dynamically simulate risk, overhead, and investment yields.*
+""")
+st.write("---")
 
-# -----------------------------------------------------------------------------
-# SIDEBAR: STEP 1 & STEP 2 (USER INPUTS)
-# -----------------------------------------------------------------------------
-st.sidebar.header("📋 Input Configuration")
+# --- SIDEBAR / USER INPUTS ---
+st.sidebar.header("🌱 Configuration Parameters")
 
-# Step 1: Crop Selection
 selected_crop = st.sidebar.selectbox(
-    "Step 1: Select Crop Type",
-    options=list(CROP_DB.keys())
+    "Select Target Crop:",
+    options=list(CROP_DATA.keys()),
+    help="Search and pick a major commercial or subsistence crop."
 )
 
-st.sidebar.markdown("---")
-
-# Step 2: User Resources Input
-st.sidebar.header("🚜 Land & Budget Resources")
-land_acres = st.sidebar.number_input(
-    "Available Land (in Acres)", 
-    min_value=0.0, 
-    value=1.0, 
-    step=0.5,
-    help="Enter total cultivable area in acres."
+unit_type = st.sidebar.radio(
+    "Land Area Unit:",
+    options=["Acres", "Hectares"],
+    horizontal=True
 )
 
-budget = st.sidebar.number_input(
-    "Available Budget (Local Currency)", 
-    min_value=0.0, 
-    value=100000.0, 
-    step=5000.0,
-    help="Enter total capital allocated for this production cycle."
+land_area = st.sidebar.number_input(
+    f"Enter Total Land Area ({unit_type}):",
+    min_value=0.1,
+    max_value=10000.0,
+    value=5.0,
+    step=0.5
 )
 
-# -----------------------------------------------------------------------------
-# BUSINESS LOGIC & PROCESSING
-# -----------------------------------------------------------------------------
-# Input Validation Check
-if land_acres <= 0:
-    st.error("⚠️ Error: Land area must be greater than 0 acres to generate projections.")
-else:
-    # Fetch active crop attributes
-    crop_data = CROP_DB[selected_crop]
-    
-    total_seeds = crop_data["seeds_per_acre_kg"] * land_acres
-    total_days = crop_data["growth_days"]
-    total_yield = crop_data["yield_per_acre_kg"] * land_acres
-    
-    # Financial Calculations
-    total_production_cost = crop_data["base_cost_per_acre"] * land_acres
-    
-    # Revenue calculations
-    revenue_local = total_yield * crop_data["local_rate_per_kg"]
-    revenue_intl = total_yield * crop_data["intl_rate_per_kg"]
-    
-    # Profit/Loss calculations
-    profit_local = revenue_local - total_production_cost
-    profit_loss_intl = revenue_intl - total_production_cost
-    
-    # Budget evaluation
-    is_budget_sufficient = budget >= total_production_cost
+available_budget = st.sidebar.number_input(
+    "Total Available Budget (PKR):",
+    min_value=1000,
+    max_value=100000000,
+    value=500000,
+    step=10000,
+    format="%d"
+)
 
-    # -----------------------------------------------------------------------------
-    # MAIN PANEL DISPLAY
-    # -----------------------------------------------------------------------------
-    
-    # 🌟 STEP 3: RESOURCE ADVISORY
-    st.header("🛡️ Step 3: Resource & Plant Protection Advisory")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="Total Seeds Required", value=f"{total_seeds:,.1f} kg")
-    with col2:
-        st.metric(label="Estimated Growth Duration", value=f"{total_days} Days")
-    with col3:
-        st.metric(label="Expected Total Biomass Yield", value=f"{total_yield:,.1f} kg")
+# --- UNIT CONVERSION LOGIC ---
+# Standardize input values to internal acre measurements
+acres_calculated = land_area if unit_type == "Acres" else land_area * 2.47105
+crop_stats = CROP_DATA[selected_crop]
 
-    st.subheader("🧪 Crop Protection Measures (Per Acre Formula Applied)")
-    protection_df = pd.DataFrame({
-        "Category": ["Pesticide Treatment", "Herbicide Control"],
-        "Recommended Composition": [crop_data["pesticides"], crop_data["herbicides"]],
-        "Total Scale Volume Needed": [
-            f"{float(crop_data['pesticides'].split('(')[1].split('L')[0]) * land_acres:.2f} Liters",
-            f"{float(crop_data['herbicides'].split('(')[1].split('L')[0]) * land_acres:.2f} Liters"
-        ]
-    })
-    st.table(protection_df)
+# --- MAIN PAGE CALCULATIONS ---
+# 1. Total Requirements Calculations
+total_seed_kg = crop_stats["seed_req_kg_per_acre"] * acres_calculated
+total_seed_cost = total_seed_kg * crop_stats["seed_cost_per_kg"]
+total_chemical_cost = crop_stats["input_chemical_cost_per_acre"] * acres_calculated
+total_labor_cost = crop_stats["labor_overhead_per_acre"] * acres_calculated
+total_estimated_cost = total_seed_cost + total_chemical_cost + total_labor_cost
+
+# 2. Yield & Timeline Calculations
+total_yield_tons = crop_stats["yield_tons_per_acre"] * acres_calculated
+harvest_days = crop_stats["days_to_harvest"]
+
+# 3. Revenue & Profit/Loss Generation
+revenue_local = total_yield_tons * crop_stats["local_rate_pkr_per_ton"]
+revenue_export = total_yield_tons * crop_stats["export_rate_pkr_per_ton"]
+
+profit_local = revenue_local - total_estimated_cost
+profit_export = revenue_export - total_estimated_cost
+
+# --- DASHBOARD VISUALIZATIONS & OUTPUTS ---
+
+# Row 1: Key Operational Metrics
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(label="🌱 Total Seed Requirement", value=f"{total_seed_kg:,.1f} Kg")
+with col2:
+    st.metric(label="⚖️ Projected Total Yield", value=f"{total_yield_tons:,.2f} Tons")
+with col3:
+    st.metric(label="⏳ Time to Harvest", value=f"{harvest_days} Days (~{round(harvest_days/30, 1)} months)")
+
+st.write("---")
+
+# Row 2: Comprehensive Management Breakdown
+left_col, right_col = st.columns(2)
+
+with left_col:
+    st.subheader("🛠️ Input & Treatment Specifications")
+    st.markdown(f"**Recommended Fertilizer Treatment:**\n*{crop_stats['fertilizer_desc']}*")
+    st.markdown(f"**Pesticide & Herbicide Controls:**\n*{crop_stats['pesticide_desc']}*")
     
-    st.markdown("---")
-
-    # 🌟 STEP 4: FINANCIAL PROJECTIONS
-    st.header("💰 Step 4: Cost Analysis & Profit/Loss Forecast")
-    
-    # Budget Warning Alert
-    if not is_budget_sufficient:
-        deficit = total_production_cost - budget
-        st.error(f"⚠️ **Budget Alert:** Your available budget is insufficient. Estimated deficit is **{deficit:,.2f}** units.")
-    else:
-        st.success("✅ **Budget Validation:** Your available financial capital covers the estimated production costs.")
-
-    col_cost, col_local, col_intl = st.columns(3)
-    with col_cost:
-        st.metric(
-            label="Total Estimated Production Cost", 
-            value=f"{total_production_cost:,.2f}",
-            delta=f"Budget Match: {budget - total_production_cost:,.2f}" if is_budget_sufficient else f"-{total_production_cost - budget:,.2f}"
-        )
-        
-    with col_local:
-        st.metric(
-            label="Projected Local Net Income", 
-            value=f"{profit_local:,.2f}", 
-            delta=f"Gross Rev: {revenue_local:,.2f}",
-            delta_color="normal" if profit_local >= 0 else "inverse"
-        )
-        
-    with col_intl:
-        st.metric(
-            label="Projected International Net Income", 
-            value=f"{profit_loss_intl:,.2f}", 
-            delta=f"Gross Rev: {revenue_intl:,.2f}",
-            delta_color="normal" if profit_loss_intl >= 0 else "inverse"
-        )
-
-    # Reference Rates Sub-table
-    st.subheader("📊 Current Market Trade Rates Reference")
+    st.subheader("💰 Market Rates Comparison")
     rates_df = pd.DataFrame({
-        "Market Domain": ["Local Distribution Network", "International Trade Index"],
-        "Rate Per KG": [f"{crop_data['local_rate_per_kg']:.2f}", f"{crop_data['intl_rate_per_kg']:.2f}"],
-        "Gross Revenue Forecast": [f"{revenue_local:,.2f}", f"{revenue_intl:,.2f}"]
+        "Market Type": ["Local Market (Punjab Base)", "International Export Rate"],
+        "Rate per Ton (PKR)": [crop_stats["local_rate_pkr_per_ton"], crop_stats["export_rate_pkr_per_ton"]]
     })
-    st.dataframe(rates_df, use_container_width=True)
+    st.table(rates_df.set_index("Market Type"))
 
-    st.markdown("---")
-
-    # 🌟 STEP 5: SMART ALTERNATIVE RECOMMENDATIONS
-    st.header("💡 Step 5: Optimization & Smart Recommendations")
+with right_col:
+    st.subheader("📊 Financial Health Matrix")
     
-    # Logic condition for checking if alternatives are necessary
-    if profit_local < 0 or not is_budget_sufficient:
-        st.warning("⚠️ High Risk Detected: Current parameters project low profit margins or high capital tension.")
-        st.write("### Recommended Alternatives:")
-        
-        viable_alternatives = []
-        for crop, details in CROP_DB.items():
-            if crop == selected_crop:
-                continue
-            
-            alt_cost = details["base_cost_per_acre"] * land_acres
-            alt_yield = details["yield_per_acre_kg"] * land_acres
-            alt_profit_local = (alt_yield * details["local_rate_per_kg"]) - alt_cost
-            
-            if budget >= alt_cost and alt_profit_local > profit_local:
-                viable_alternatives.append({
-                    "Crop": crop,
-                    "Production Cost": alt_cost,
-                    "Expected Local Profit": alt_profit_local,
-                    "Growth Cycle": f"{details['growth_days']} days"
-                })
-        
-        if viable_alternatives:
-            alt_df = pd.DataFrame(viable_alternatives)
-            st.write("Switching to one of the following alternatives fits your profile constraints more efficiently:")
-            st.dataframe(alt_df, use_container_width=True)
-        else:
-            st.info("No single alternative fits your exact constraint threshold perfectly. Consider reducing production land scale acreage down to lower input overhead requirements safely.")
+    # Financial indicators
+    st.write(f"**Total Cost of Production:** PKR {total_estimated_cost:,.2f}")
+    
+    # Budget Check Warning / Success
+    if total_estimated_cost > available_budget:
+        st.error(f"⚠️ **Budget Deficit:** Total costs exceed your available capital by PKR {total_estimated_cost - available_budget:,.2f}. Consider lowering cultivation acreage or securing financing.")
     else:
-        st.success("✨ Optimization Check: This operation exhibits solid operational safety profiles. Proceed with standard cultivation timeline patterns.")
+        st.success(f"✅ **Budget Safe:** Your capital is sufficient! You have a remaining reserve buffer of PKR {available_budget - total_estimated_cost:,.2f}.")
+        
+    # Profit presentation
+    local_color = "green" if profit_local >= 0 else "red"
+    export_color = "green" if profit_export >= 0 else "red"
+    
+    st.markdown(f"### Local Net Profit/Loss: <span style='color:{local_color}'>PKR {profit_local:,.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"### Export Net Profit/Loss: <span style='color:{export_color}'>PKR {profit_export:,.2f}</span>", unsafe_allow_html=True)
+
+st.write("---")
+
+# Row 3: Interactive Visual Risk/Reward Analysis Diagram
+st.subheader("📉 Investment vs Return Cost Structure Breakdown")
+
+# Setting up labels and data array for plotting
+categories = ['Seed Costs', 'Chemicals/Fertilizers', 'Labor Overhead', 'Projected Net Local Profit', 'Projected Export Bonus']
+costs_breakdown = [total_seed_cost, total_chemical_cost, total_labor_cost, max(0, profit_local), max(0, profit_export - profit_local if profit_export > profit_local else 0)]
+
+fig = go.Figure(data=[
+    go.Bar(
+        x=categories,
+        y=costs_breakdown,
+        marker_color=['#d97706', '#059669', '#2563eb', '#16a34a', '#8b5cf6'],
+        text=[f"PKR {val:,.0f}" for val in costs_breakdown],
+        textposition='auto',
+    )
+])
+
+fig.update_layout(
+    title=f"Cost Distribution vs Yield Margins for {selected_crop} across {land_area} {unit_type}",
+    xaxis_title="Financial Component",
+    yaxis_title="Value (PKR)",
+    template="plotly_white",
+    height=500
+)
+
+st.plotly_chart(fig, use_container_width=True)
