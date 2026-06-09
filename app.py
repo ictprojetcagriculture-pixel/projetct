@@ -1,241 +1,164 @@
 import streamlit as st
+import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
+import plotly.express as px
 
-# --- PAGE CONFIGURATION ---
+# -----------------------------------------------------------------------------
+# 1. PAGE SETUP & CONFIGURATION
+# -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="AgriEconomics: Crop Dashboard",
-    page_icon="🌾",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="AgriDrone VRA Dashboard",
+    page_icon="🛸",
+    layout="wide"
 )
 
-# --- CUSTOM THEMING / STYLE INJECTION ---
+st.title("🛸 Drone Spraying & Resource Optimizer")
 st.markdown("""
-    <style>
-    .main { background-color: #f9fbf9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    h1, h2, h3 { color: #2e5a1c; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- MOCK DATASTORE ---
-# Rates and inputs optimized for Punjab/Pakistan regional averages and global markets.
-# Values are normalized per ACRE. (1 Hectare = 2.47105 Acres)
-CROP_DATA = {
-    "Wheat (Gandum)": {
-        "seed_req_kg_per_acre": 50,
-        "seed_cost_per_kg": 120,
-        "fertilizer_desc": "Urea: 2 bags/acre, DAP: 1 bag/acre",
-        "pesticide_desc": "Sulfosulfuron for weed control, Rust prevention fungicides if humid.",
-        "input_chemical_cost_per_acre": 18000,
-        "labor_overhead_per_acre": 12000,
-        "days_to_harvest": 140,
-        "yield_tons_per_acre": 1.6,
-        "local_rate_pkr_per_ton": 100000,       # ~4000 PKR per 40kg
-        "export_rate_pkr_per_ton": 135000       # Global equivalent in PKR
-    },
-    "Rice (Basmati)": {
-        "seed_req_kg_per_acre": 6,
-        "seed_cost_per_kg": 450,
-        "fertilizer_desc": "DAP: 1 bag/acre, Urea: 2 bags/acre, Zinc Sulfate: 10kg/acre",
-        "pesticide_desc": "Pre-emergence herbicides (Butachlor), Cartap for stem borer control.",
-        "input_chemical_cost_per_acre": 25000,
-        "labor_overhead_per_acre": 20000,
-        "days_to_harvest": 120,
-        "yield_tons_per_acre": 1.8,
-        "local_rate_pkr_per_ton": 225000,      # High value Basmati variety
-        "export_rate_pkr_per_ton": 320000
-    },
-    "Cotton (Kapas)": {
-        "seed_req_kg_per_acre": 8,
-        "seed_cost_per_kg": 800,
-        "fertilizer_desc": "DAP: 1.5 bags/acre, Urea: 3 bags/acre (split applications)",
-        "pesticide_desc": "Targeted sprays for Whitefly, Pink Bollworm, and Jassids.",
-        "input_chemical_cost_per_acre": 32000,
-        "labor_overhead_per_acre": 22000,
-        "days_to_harvest": 180,
-        "yield_tons_per_acre": 1.0,
-        "local_rate_pkr_per_ton": 210000,      # ~8400 PKR per 40kg
-        "export_rate_pkr_per_ton": 260000
-    },
-    "Sugarcane (Kamad)": {
-        "seed_req_kg_per_acre": 3000, # Uses seed sets/canes
-        "seed_cost_per_kg": 12,
-        "fertilizer_desc": "DAP: 2 bags/acre, Urea: 4-5 bags/acre, Potash: 1 bag/acre",
-        "pesticide_desc": "Granular insecticides for Borers, Termite control chemical treatment.",
-        "input_chemical_cost_per_acre": 40000,
-        "labor_overhead_per_acre": 35000,
-        "days_to_harvest": 300,
-        "yield_tons_per_acre": 32.0,
-        "local_rate_pkr_per_ton": 10000,        # ~400 PKR per 40kg
-        "export_rate_pkr_per_ton": 13000
-    },
-    "Maize (Makai)": {
-        "seed_req_kg_per_acre": 10,
-        "seed_cost_per_kg": 1200, # Hybrid seeds
-        "fertilizer_desc": "DAP: 2 bags/acre, Urea: 3 bags/acre, Zinc application",
-        "pesticide_desc": "Fall Armyworm monitoring and emamectin benzoate application.",
-        "input_chemical_cost_per_acre": 28000,
-        "labor_overhead_per_acre": 15000,
-        "days_to_harvest": 110,
-        "yield_tons_per_acre": 3.5,
-        "local_rate_pkr_per_ton": 70000,
-        "export_rate_pkr_per_ton": 85000
-    },
-    "Potato (Aloo)": {
-        "seed_req_kg_per_acre": 1200,
-        "seed_cost_per_kg": 60,
-        "fertilizer_desc": "DAP: 3 bags/acre, Urea: 2 bags/acre, SOP (Potash): 2 bags/acre",
-        "pesticide_desc": "Fungicides for Early/Late Blight (Mancozeb), Aphid controls.",
-        "input_chemical_cost_per_acre": 45000,
-        "labor_overhead_per_acre": 25000,
-        "days_to_harvest": 100,
-        "yield_tons_per_acre": 11.0,
-        "local_rate_pkr_per_ton": 45000,
-        "export_rate_pkr_per_ton": 65000
-    }
-}
-
-# --- HEADER SECTION ---
-st.title("🌾 AgriEconomics: Interactive Crop & Decision Dashboard")
-st.markdown("""
-    Welcome to the smart farming economic evaluation tool. This dashboard calculates resource requirements, 
-    estimated yields, timelines, and accurate financial projections (Profit/Loss analyses) 
-    comparing local and export market channels.
-    
-    *Adjust variables in the sidebar to dynamically simulate risk, overhead, and investment yields.*
+This dashboard simulates how ICT-driven drone systems process multi-spectral field data, 
+visualize crop health indices, and calculate variable-rate spraying prescriptions.
 """)
-st.write("---")
 
-# --- SIDEBAR / USER INPUTS ---
-st.sidebar.header("🌱 Configuration Parameters")
+st.sidebar.header("🕹️ Field & Drone Controls")
 
-selected_crop = st.sidebar.selectbox(
-    "Select Target Crop:",
-    options=list(CROP_DATA.keys()),
-    help="Search and pick a major commercial or subsistence crop."
-)
+# -----------------------------------------------------------------------------
+# 2. SIDEBAR CONFIGURATIONS
+# -----------------------------------------------------------------------------
+field_size = st.sidebar.slider("Simulated Field Resolution (NxN Grid)", 20, 100, 50, step=10)
+infestation_risk = st.sidebar.slider("Simulated Crop Stress / Weed Intensity", 0.1, 1.0, 0.5, 0.1)
 
-unit_type = st.sidebar.radio(
-    "Land Area Unit:",
-    options=["Acres", "Hectares"],
-    horizontal=True
-)
+st.sidebar.markdown("---")
+st.sidebar.subheader("💧 Variable-Rate Calibration")
+base_chemical_rate = st.sidebar.number_input("Base Input Fluid Rate (L/Hectare)", value=2.5, step=0.5)
+base_water_rate = st.sidebar.number_input("Base Water Volume (L/Hectare)", value=100.0, step=10.0)
+ulv_mode = st.sidebar.toggle("Enable Ultra-Low Volume (ULV) Atomization", value=True)
 
-land_area = st.sidebar.number_input(
-    f"Enter Total Land Area ({unit_type}):",
-    min_value=0.1,
-    max_value=10000.0,
-    value=5.0,
-    step=0.5
-)
-
-available_budget = st.sidebar.number_input(
-    "Total Available Budget (PKR):",
-    min_value=1000,
-    max_value=100000000,
-    value=500000,
-    step=10000,
-    format="%d"
-)
-
-# --- UNIT CONVERSION LOGIC ---
-# Standardize input values to internal acre measurements
-acres_calculated = land_area if unit_type == "Acres" else land_area * 2.47105
-crop_stats = CROP_DATA[selected_crop]
-
-# --- MAIN PAGE CALCULATIONS ---
-# 1. Total Requirements Calculations
-total_seed_kg = crop_stats["seed_req_kg_per_acre"] * acres_calculated
-total_seed_cost = total_seed_kg * crop_stats["seed_cost_per_kg"]
-total_chemical_cost = crop_stats["input_chemical_cost_per_acre"] * acres_calculated
-total_labor_cost = crop_stats["labor_overhead_per_acre"] * acres_calculated
-total_estimated_cost = total_seed_cost + total_chemical_cost + total_labor_cost
-
-# 2. Yield & Timeline Calculations
-total_yield_tons = crop_stats["yield_tons_per_acre"] * acres_calculated
-harvest_days = crop_stats["days_to_harvest"]
-
-# 3. Revenue & Profit/Loss Generation
-revenue_local = total_yield_tons * crop_stats["local_rate_pkr_per_ton"]
-revenue_export = total_yield_tons * crop_stats["export_rate_pkr_per_ton"]
-
-profit_local = revenue_local - total_estimated_cost
-profit_export = revenue_export - total_estimated_cost
-
-# --- DASHBOARD VISUALIZATIONS & OUTPUTS ---
-
-# Row 1: Key Operational Metrics
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric(label="🌱 Total Seed Requirement", value=f"{total_seed_kg:,.1f} Kg")
-with col2:
-    st.metric(label="⚖️ Projected Total Yield", value=f"{total_yield_tons:,.2f} Tons")
-with col3:
-    st.metric(label="⏳ Time to Harvest", value=f"{harvest_days} Days (~{round(harvest_days/30, 1)} months)")
-
-st.write("---")
-
-# Row 2: Comprehensive Management Breakdown
-left_col, right_col = st.columns(2)
-
-with left_col:
-    st.subheader("🛠️ Input & Treatment Specifications")
-    st.markdown(f"**Recommended Fertilizer Treatment:**\n*{crop_stats['fertilizer_desc']}*")
-    st.markdown(f"**Pesticide & Herbicide Controls:**\n*{crop_stats['pesticide_desc']}*")
+# -----------------------------------------------------------------------------
+# 3. REMOTE SENSING DATA ENGINE (NDVI GENERATOR)
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=60)
+def generate_synthetic_field(size, stress):
+    """Simulates Near-Infrared (NIR) and Red band data to compute NDVI."""
+    np.random.seed(42) # Static seed for predictable field boundaries
     
-    st.subheader("💰 Market Rates Comparison")
-    rates_df = pd.DataFrame({
-        "Market Type": ["Local Market (Punjab Base)", "International Export Rate"],
-        "Rate per Ton (PKR)": [crop_stats["local_rate_pkr_per_ton"], crop_stats["export_rate_pkr_per_ton"]]
-    })
-    st.table(rates_df.set_index("Market Type"))
+    # Generate mock topography/soil variances using coordinate gradients
+    x = np.linspace(-2, 2, size)
+    y = np.linspace(-2, 2, size)
+    X, Y = np.meshgrid(x, y)
+    z = np.sin(X) * np.cos(Y) + np.random.normal(0, 0.25, (size, size))
+    
+    # Normalize mapping between 0.0 and 1.0
+    z_norm = (z - z.min()) / (z.max() - z.min())
+    
+    # Simulate spectral reflectance response 
+    # High stress forces higher Red absorption loss and lower NIR structural reflection
+    red = 0.05 + 0.35 * (z_norm * stress)
+    nir = 0.85 - 0.45 * (z_norm * stress)
+    
+    # Compute NDVI = (NIR - RED) / (NIR + RED)
+    ndvi = (nir - red) / (nir + red)
+    return np.clip(ndvi, -1.0, 1.0)
 
-with right_col:
-    st.subheader("📊 Financial Health Matrix")
-    
-    # Financial indicators
-    st.write(f"**Total Cost of Production:** PKR {total_estimated_cost:,.2f}")
-    
-    # Budget Check Warning / Success
-    if total_estimated_cost > available_budget:
-        st.error(f"⚠️ **Budget Deficit:** Total costs exceed your available capital by PKR {total_estimated_cost - available_budget:,.2f}. Consider lowering cultivation acreage or securing financing.")
+ndvi_matrix = generate_synthetic_field(field_size, infestation_risk)
+
+# -----------------------------------------------------------------------------
+# 4. PRESCRIPTION ALGORITHM (VARIABLE-RATE ENGINE)
+# -----------------------------------------------------------------------------
+# Define critical agronomic threshold where remediation is required
+CRITICAL_HEALTH_THRESHOLD = 0.50
+
+# Flatten grid arrays for vector calculation and tracking dataframe conversion
+grid_x, grid_y = np.indices(ndvi_matrix.shape)
+df = pd.DataFrame({
+    "X_Coord_m": grid_x.flatten() * 2,  # Scaled to represent meter tracking spacing
+    "Y_Coord_m": grid_y.flatten() * 2,
+    "NDVI": ndvi_matrix.flatten()
+})
+
+def calculate_vra_dosage(row):
+    """Applies inverse logic: Lower crop health (NDVI) requires heavier chemical delivery."""
+    if row["NDVI"] >= CRITICAL_HEALTH_THRESHOLD:
+        # Healthy canopy: Drop application to minimal baseline protection volume
+        chem_factor = 0.15 
+        water_factor = 0.20
     else:
-        st.success(f"✅ **Budget Safe:** Your capital is sufficient! You have a remaining reserve buffer of PKR {available_budget - total_estimated_cost:,.2f}.")
+        # Compromised canopy: Scale application up progressively based on stress
+        chem_factor = 1.3 - row["NDVI"]
+        water_factor = 1.1
         
-    # Profit presentation
-    local_color = "green" if profit_local >= 0 else "red"
-    export_color = "green" if profit_export >= 0 else "red"
+    # Scale raw totals to match individual grid square areas
+    chem_dose = base_chemical_rate * chem_factor * 0.01 
+    water_dose = base_water_rate * water_factor * 0.01
     
-    st.markdown(f"### Local Net Profit/Loss: <span style='color:{local_color}'>PKR {profit_local:,.2f}</span>", unsafe_allow_html=True)
-    st.markdown(f"### Export Net Profit/Loss: <span style='color:{export_color}'>PKR {profit_export:,.2f}</span>", unsafe_allow_html=True)
+    # Apply ULV mechanical hardware efficiency deduction
+    if ulv_mode:
+        water_dose *= 0.15  # Droplet atomization cuts carrier water demand up to 85%
+        
+    return pd.Series([chem_dose, water_dose])
 
-st.write("---")
+df[["Target_Chemical_L", "Target_Water_L"]] = df.apply(calculate_vra_dosage, axis=1)
 
-# Row 3: Interactive Visual Risk/Reward Analysis Diagram
-st.subheader("📉 Investment vs Return Cost Structure Breakdown")
+# -----------------------------------------------------------------------------
+# 5. KPIS & METRIC METADATA CALCULATIONS
+# -----------------------------------------------------------------------------
+total_chem = df["Target_Chemical_L"].sum()
+total_water = df["Target_Water_L"].sum()
 
-# Setting up labels and data array for plotting
-categories = ['Seed Costs', 'Chemicals/Fertilizers', 'Labor Overhead', 'Projected Net Local Profit', 'Projected Export Bonus']
-costs_breakdown = [total_seed_cost, total_chemical_cost, total_labor_cost, max(0, profit_local), max(0, profit_export - profit_local if profit_export > profit_local else 0)]
+# Baseline benchmarks calculating standard blanket/uniform coverage configurations
+blanket_chem = (base_chemical_rate * 1.1) * 0.01 * len(df)
+blanket_water = base_water_rate * 0.01 * len(df)
 
-fig = go.Figure(data=[
-    go.Bar(
-        x=categories,
-        y=costs_breakdown,
-        marker_color=['#d97706', '#059669', '#2563eb', '#16a34a', '#8b5cf6'],
-        text=[f"PKR {val:,.0f}" for val in costs_breakdown],
-        textposition='auto',
+saved_chem_pct = max(0.0, (1.0 - (total_chem / blanket_chem)) * 100)
+saved_water_pct = max(0.0, (1.0 - (total_water / blanket_water)) * 100)
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("Total Chemical Required", f"{total_chem:.2f} L")
+with col2:
+    st.metric("Total Water Required", f"{total_water:.1f} L")
+with col3:
+    st.metric("Chemical Waste Saved", f"{saved_chem_pct:.1f}%", delta="Optimized")
+with col4:
+    st.metric("Water Footprint Saved", f"{saved_water_pct:.1f}%", delta="ULV Active" if ulv_mode else None)
+
+st.markdown("---")
+
+# -----------------------------------------------------------------------------
+# 6. SPATIAL GEOMETRY VISUALIZATIONS
+# -----------------------------------------------------------------------------
+map_col1, map_col2 = st.columns(2)
+
+with map_col1:
+    st.subheader("🌾 Crop Canopy Health Map (NDVI)")
+    fig_ndvi = px.imshow(
+        ndvi_matrix,
+        color_continuous_scale="RdYlGn",  # Standard agronomic color ramp
+        labels=dict(x="Field Grid Columns", y="Field Grid Rows", color="NDVI Index"),
+        origin="lower"
     )
-])
+    fig_ndvi.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10))
+    st.plotly_chart(fig_ndvi, use_container_width=True)
+    st.caption("Interpretation: Red/Yellow patches signal heavy stress anomalies or weed growth zones.")
 
-fig.update_layout(
-    title=f"Cost Distribution vs Yield Margins for {selected_crop} across {land_area} {unit_type}",
-    xaxis_title="Financial Component",
-    yaxis_title="Value (PKR)",
-    template="plotly_white",
-    height=500
-)
+with map_col2:
+    st.subheader("🎯 Drone Flow-Rate Prescription Map")
+    fig_spray = px.scatter(
+        df,
+        x="X_Coord_m",
+        y="Y_Coord_m",
+        color="Target_Chemical_L",
+        size=df["Target_Chemical_L"].clip(lower=0.005),
+        color_continuous_scale="Purples",
+    )
+    fig_spray.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10))
+    st.plotly_chart(fig_spray, use_container_width=True)
+    st.caption("Interpretation: Dynamic dosage values mapped to spatial target coordinates.")
 
-st.plotly_chart(fig, use_container_width=True)
+# -----------------------------------------------------------------------------
+# 7. TELEMETRY LOG FILE EXPORT GENERATOR
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("📋 Drone Mission Telemetry Log Export")
+st.markdown("This structured vector list format can be downloaded directly and synced to commercial drone flight mission control software.")
+
+# Present a clean subset of the target matrix log
+st.dataframe(df, use_container_width=True, hide_index=True)
